@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar requirements
+COPY requirements.txt .
+
+# Instalar dependencias Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código
+COPY supabase_manager.py .
+COPY anomaly_detector_supabase.py .
+# Las credenciales se pasan como variables de entorno en docker-compose.yml
+# NUNCA copiar el .env dentro de la imagen
+
+# Comando de inicio
+CMD ["python", "-u", "anomaly_detector_supabase.py"]

@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # MOSQUITTO (MQTT BROKER)
+  # ============================================
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: fire-detection-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+    networks:
+      - fire-network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================
+  # DETECTOR DE ANOMALÍAS (SUPABASE)
+  # ============================================
+  detector:
+    build:
+      context: .
+      dockerfile: Dockerfile.detector-supabase
+    container_name: fire-detection-detector
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      # Configuración Supabase (cargar desde .env)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      SUPABASE_DB_HOST: ${SUPABASE_DB_HOST}
+      SUPABASE_DB_PORT: ${SUPABASE_DB_PORT}
+      SUPABASE_DB_USER: ${SUPABASE_DB_USER}
+      SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD}
+      SUPABASE_DB_NAME: ${SUPABASE_DB_NAME}
+      
+      # Configuración MQTT
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: 1883
+      MQTT_TOPIC: sensores/forestales
+      
+      # Configuración del detector
+      VENTANA_ENTRENAMIENTO: 10
+      UMBRAL_ANOMALIA: -0.3
+      MIN_SENSORS_FOR_FIRE: 2
+      BATCH_SIZE: 100
+      BATCH_INTERVAL: 5
+    networks:
+      - fire-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # SIMULADOR DE SENSORES
+  # ============================================
+  simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.simulator
+    container_name: fire-detection-simulator
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: 1883
+      MQTT_TOPIC: sensores/forestales
+      CYCLE_INTERVAL: 30
+    networks:
+      - fire-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ============================================
+# REDES
+# ============================================
+networks:
+  fire-network:
+    driver: bridge
+
+# ============================================
+# VOLÚMENES PERSISTENTES
+# ============================================
+volumes:
+  mosquitto_data:
+    driver: local
+  mosquitto_logs:
+    driver: local
